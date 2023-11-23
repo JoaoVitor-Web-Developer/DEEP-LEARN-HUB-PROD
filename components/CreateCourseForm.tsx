@@ -32,7 +32,7 @@ const CreateCourseForm = ({ isPro }: Props) => {
         title,
         units,
       }, {
-        timeout: 20000,
+        timeout: 100000,
       });
       return response.data;
     },
