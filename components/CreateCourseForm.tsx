@@ -16,14 +16,14 @@ import { useToast } from "./ui/use-toast";
 import { useRouter } from "next/navigation";
 import SubscriptionAction from "./SubscriptionAction";
 
-type Props = {isPro: boolean};
+type Props = { isPro: boolean };
 
 type Input = z.infer<typeof createChaptersSchema>;
 
-const CreateCourseForm = ({isPro}: Props) => {
+const CreateCourseForm = ({ isPro }: Props) => {
   const router = useRouter();
   const { toast } = useToast();
-  const { mutate: createChapters, isPending} = useMutation({
+  const { mutate: createChapters, isPending } = useMutation({
     mutationFn: async ({ title, units }: Input) => {
       const response = await axios.post("/api/course/createChapters", {
         title,
@@ -41,33 +41,48 @@ const CreateCourseForm = ({isPro}: Props) => {
     },
   });
 
-  function onSubmit(data: Input) {
-    console.log(data);
-    if (data.units.some((unit) => unit === "")) {
-      toast({
-        title: "Erro",
-        description: "Por favor preencha os Subtópicos.",
-        variant: "destructive",
-      });
-      return;
-    }
-    createChapters(data, {
-      onSuccess: ({ course_id }) => {
-        toast({
-          title:"Sucesso!",
-          description: "Curso criado com sucesso."
-        })
-        router.push(`/create/${course_id}`);
-      },
-      onError: (error) => {
-        console.log(error);
+  async function onSubmit(data: Input) {
+    try {
+      console.log(data);
+
+      if (data.units.some((unit) => unit === "")) {
         toast({
           title: "Erro",
-          description: "Algo deu errado.",
+          description: "Por favor preencha os Subtópicos.",
           variant: "destructive",
         });
-      },
-    });
+        return;
+      }
+
+      createChapters(data, {
+        onSuccess: ({ course_id }) => {
+          toast({
+            title: "Sucesso!",
+            description: "Curso criado com sucesso.",
+          });
+          router.push(`/create/${course_id}`);
+        },
+        onError: (error) => {
+          console.log(error);
+
+          if (axios.isAxiosError(error) && error.code === "ECONNABORTED") {
+            toast({
+              title: "Erro",
+              description: "A requisição expirou. Tente novamente.",
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Erro",
+              description: "Algo deu errado.",
+              variant: "destructive",
+            });
+          }
+        },
+      });
+    } catch (error) {
+      console.error("Error during onSubmit:", error);
+    }
   }
   return (
     <div className="w-full">
@@ -164,7 +179,8 @@ const CreateCourseForm = ({isPro}: Props) => {
             className="w-full mt-6"
             size="lg"
           >
-            Vamos lá!
+            {isPending ? "Aguarde..." : "Vamos lá!"}
+
           </Button>
         </form>
       </Form>
