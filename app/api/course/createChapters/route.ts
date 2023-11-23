@@ -9,9 +9,9 @@ import { prisma } from "@/lib/db";
 import { getAuthSession } from "@/lib/auth";
 import { checkSubscription } from "@/lib/subscription";
 
-export async function POST(req: Request, res: Response) {
+export async function POST({...authOptions},req: Request, res: Response) {
   try {
-    const session = await getAuthSession({...getAuthSession});
+    const session = await getAuthSession({authOptions});
     if (!session?.user) {
       return new NextResponse("Sem autorização", { status: 401 });
     }
