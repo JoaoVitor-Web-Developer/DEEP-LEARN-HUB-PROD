@@ -1,0 +1,8 @@
+{
+    "functions": {
+      "api/course/createChapters": {
+        "maxDuration": 40
+      }
+    }
+  }
+  
