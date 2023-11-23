@@ -9,18 +9,23 @@ import { prisma } from "@/lib/db";
 import { getAuthSession } from "@/lib/auth";
 import { checkSubscription } from "@/lib/subscription";
 
-export async function POST({...authOptions}, req: Request, res: Response) {
-
+export async function POST({ ...authOptions }, req: Request, res: Response) {
   try {
-    const session = await getAuthSession({authOptions});
+    const session = await getAuthSession({ authOptions });
     if (!session?.user) {
       return new NextResponse("Sem autorização", { status: 401 });
     }
+
     const isPro = await checkSubscription();
     if (session.user.credits <= 0 && !isPro) {
-      return new NextResponse("Sem creditos", { status: 402 });
+      return new NextResponse("Sem créditos", { status: 402 });
     }
+
     const body = await req.json();
+    if (!body) {
+      return new NextResponse("Corpo da requisição inválido", { status: 400 });
+    }
+
     const { title, units } = createChaptersSchema.parse(body);
 
     const userCourses = await prisma.course.findMany({
@@ -40,7 +45,7 @@ export async function POST({...authOptions}, req: Request, res: Response) {
     let output_units: outputUnits = await strict_output(
       "Você é uma IA capaz de fazer a curadoria do conteúdo do curso, criar títulos de capítulos relevantes e encontrar vídeos relevantes do YouTube para cada capítulo",
       new Array(units.length).fill(
-        `É sua função criar um curso sobre ${title}. O usuário solicitou a criação de capítulos para cada uma das unidades. Em seguida, para cada capítulo, forneça uma consulta de pesquisa detalhada no YouTube que pode ser usada para encontrar um vídeo educacional informativo para cada capítulo. Cada consulta deve fornecer um curso educativo informativo no youtube.`
+        `É sua função criar um curso sobre ${title}. O usuário solicitou a criação de capítulos para cada uma das unidades. Em seguida, para cada capítulo, forneça uma consulta de pesquisa detalhada no YouTube que pode ser usada para encontrar um vídeo educativo informativo para cada capítulo. Cada consulta deve fornecer um curso educativo informativo no youtube.`
       ),
       {
         title: "Título do subtópico",
@@ -60,6 +65,7 @@ export async function POST({...authOptions}, req: Request, res: Response) {
     const course_image = await getUnsplashImage(
       imageSearchTerm.image_search_term
     );
+
     const course = await prisma.course.create({
       data: {
         name: title,
@@ -68,24 +74,26 @@ export async function POST({...authOptions}, req: Request, res: Response) {
       },
     });
 
-    for (const unit of output_units) {
-      const title = unit.title;
-      const prismaUnit = await prisma.unit.create({
-        data: {
-          name: title,
-          courseId: course.id,
-        },
-      });
-      await prisma.chapter.createMany({
-        data: unit.chapters.map((chapter) => {
-          return {
-            name: chapter.chapter_title,
-            youtubeSearchQuery: chapter.youtube_search_query,
-            unitId: prismaUnit.id,
-          };
-        }),
-      });
-    }
+    await Promise.all(
+      output_units.map(async (unit) => {
+        const prismaUnit = await prisma.unit.create({
+          data: {
+            name: unit.title,
+            courseId: course.id,
+          },
+        });
+
+        await prisma.chapter.createMany({
+          data: unit.chapters.map((chapter) => {
+            return {
+              name: chapter.chapter_title,
+              youtubeSearchQuery: chapter.youtube_search_query,
+              unitId: prismaUnit.id,
+            };
+          }),
+        });
+      })
+    );
 
     await prisma.user.update({
       where: {
@@ -100,10 +108,12 @@ export async function POST({...authOptions}, req: Request, res: Response) {
 
     return NextResponse.json({ course_id: course.id });
   } catch (error) {
+    console.error("Error in POST /api/course/createChapters:", error);
+
     if (error instanceof ZodError) {
-      return new NextResponse("invalid body", { status: 400 });
+      return new NextResponse("Corpo da requisição inválido", { status: 400 });
     } else {
-      return new NextResponse("Internal Server Error", { status: 500 });
+      return new NextResponse("Erro interno do servidor", { status: 500 });
     }
   }
 }

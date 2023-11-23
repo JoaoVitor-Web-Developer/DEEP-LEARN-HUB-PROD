@@ -1,119 +1,197 @@
-// /api/course/createChapters
-
-import { NextResponse } from "next/server";
+"use client";
+import React from "react";
+import { Form, FormControl, FormField, FormItem, FormLabel } from "./ui/form";
+import { z } from "zod";
 import { createChaptersSchema } from "@/validators/course";
-import { ZodError } from "zod";
-import { strict_output } from "@/lib/gpt";
-import { getUnsplashImage } from "@/lib/unsplash";
-import { prisma } from "@/lib/db";
-import { getAuthSession } from "@/lib/auth";
-import { checkSubscription } from "@/lib/subscription";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Input } from "./ui/input";
+import { Separator } from "./ui/separator";
+import { Button } from "./ui/button";
+import { Plus, Trash } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useMutation } from "@tanstack/react-query";
+import axios from "axios";
+import { useToast } from "./ui/use-toast";
+import { useRouter } from "next/navigation";
+import SubscriptionAction from "./SubscriptionAction";
+import axiosRetry from "axios-retry";
 
-export async function POST({ ...authOptions }, req: Request, res: Response) {
-  try {
-    const session = await getAuthSession({ authOptions });
-    if (!session?.user) {
-      return new NextResponse("Sem autorização", { status: 401 });
-    }
+axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
-    const isPro = await checkSubscription();
-    if (session.user.credits <= 0 && !isPro) {
-      return new NextResponse("Sem créditos", { status: 402 });
-    }
+type Props = { isPro: boolean };
 
-    const body = await req.json();
-    if (!body) {
-      return new NextResponse("Corpo da requisição inválido", { status: 400 });
-    }
+type Input = z.infer<typeof createChaptersSchema>;
 
-    const { title, units } = createChaptersSchema.parse(body);
+const CreateCourseForm = ({ isPro }: Props) => {
+  const router = useRouter();
+  const { toast } = useToast();
+  const { mutate: createChapters, isPending } = useMutation({
+    mutationFn: async ({ title, units }: Input) => {
+      const response = await axios.post("/api/course/createChapters", {
+        title,
+        units,
+      }, {
+        timeout: 100000,
+      });
+      return response.data;
+    },
+  });
 
-    const userCourses = await prisma.course.findMany({
-      where: {
-        createdBy: session.user.id,
-      },
-    });
+  const form = useForm<Input>({
+    resolver: zodResolver(createChaptersSchema),
+    defaultValues: {
+      title: "",
+      units: ["", "", ""],
+    },
+  });
 
-    type outputUnits = {
-      title: string;
-      chapters: {
-        youtube_search_query: string;
-        chapter_title: string;
-      }[];
-    }[];
+  async function onSubmit(data: Input) {
+    try {
+      console.log(data);
 
-    let output_units: outputUnits = await strict_output(
-      "Você é uma IA capaz de fazer a curadoria do conteúdo do curso, criar títulos de capítulos relevantes e encontrar vídeos relevantes do YouTube para cada capítulo",
-      new Array(units.length).fill(
-        `É sua função criar um curso sobre ${title}. O usuário solicitou a criação de capítulos para cada uma das unidades. Em seguida, para cada capítulo, forneça uma consulta de pesquisa detalhada no YouTube que pode ser usada para encontrar um vídeo educativo informativo para cada capítulo. Cada consulta deve fornecer um curso educativo informativo no youtube.`
-      ),
-      {
-        title: "Título do subtópico",
-        chapters:
-          "Uma série de capítulos, cada capítulo deve ter uma chave youtube_search_query e uma chave chapter_title no objeto JSON",
-      }
-    );
-
-    const imageSearchTerm = await strict_output(
-      "Você é uma IA capaz de encontrar a imagem mais relevante para um curso",
-      `Forneça um bom termo de pesquisa de imagens para o título de um curso sobre ${title}. Este termo de pesquisa será inserido na API unsplash, portanto, certifique-se de que seja um bom termo de pesquisa que retornará bons resultados`,
-      {
-        image_search_term: "Um bom termo de pesquisa para o título do curso",
-      }
-    );
-
-    const course_image = await getUnsplashImage(
-      imageSearchTerm.image_search_term
-    );
-
-    const course = await prisma.course.create({
-      data: {
-        name: title,
-        image: course_image,
-        createdBy: session.user.id,
-      },
-    });
-
-    await Promise.all(
-      output_units.map(async (unit) => {
-        const prismaUnit = await prisma.unit.create({
-          data: {
-            name: unit.title,
-            courseId: course.id,
-          },
+      if (data.units.some((unit) => unit === "")) {
+        toast({
+          title: "Erro",
+          description: "Por favor preencha os Subtópicos.",
+          variant: "destructive",
         });
+        return;
+      }
 
-        await prisma.chapter.createMany({
-          data: unit.chapters.map((chapter) => {
-            return {
-              name: chapter.chapter_title,
-              youtubeSearchQuery: chapter.youtube_search_query,
-              unitId: prismaUnit.id,
-            };
-          }),
-        });
-      })
-    );
-
-    await prisma.user.update({
-      where: {
-        id: session.user.id,
-      },
-      data: {
-        credits: {
-          decrement: 1,
+      createChapters(data, {
+        onSuccess: ({ course_id }) => {
+          toast({
+            title: "Sucesso!",
+            description: "Curso criado com sucesso.",
+          });
+          router.push(`/create/${course_id}`);
         },
-      },
-    });
+        onError: (error) => {
+          console.log(error);
 
-    return NextResponse.json({ course_id: course.id });
-  } catch (error) {
-    console.error("Error in POST /api/course/createChapters:", error);
-
-    if (error instanceof ZodError) {
-      return new NextResponse("Corpo da requisição inválido", { status: 400 });
-    } else {
-      return new NextResponse("Erro interno do servidor", { status: 500 });
+          if (axios.isAxiosError(error) && error.code === "ECONNABORTED") {
+            toast({
+              title: "Erro",
+              description: "A requisição expirou. Tente novamente.",
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Erro",
+              description: "Algo deu errado.",
+              variant: "destructive",
+            });
+          }
+        },
+      });
+    } catch (error) {
+      console.error("Error during onSubmit:", error);
     }
   }
-}
+  return (
+    <div className="w-full">
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="w-full mt-4">
+          <FormField
+            control={form.control}
+            name="title"
+            render={({ field }) => {
+              return (
+                <FormItem className="flex flex-col items-start w-full sm:items-center sm:flex-row">
+                  <FormLabel className="flex-[2] text-3xl">Titulo</FormLabel>
+                  <FormControl className="flex-[6]">
+                    <Input
+                      placeholder="Insira o tópico principal do curso"
+                      {...field}
+                    />
+                  </FormControl>
+                </FormItem>
+              );
+            }}
+          />
+
+          <AnimatePresence>
+            {form.watch("units").map((_, index) => {
+              return (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{
+                    opacity: { duration: 0.2 },
+                    height: { duration: 0.2 },
+                  }}
+                >
+                  <FormField
+                    key={index}
+                    control={form.control}
+                    name={`units.${index}`}
+                    render={({ field }) => {
+                      return (
+                        <FormItem className="flex flex-col items-start w-full sm:items-center sm:flex-row">
+                          <FormLabel className="flex-[2] text-xl">
+                            Subtópico {index + 1}
+                          </FormLabel>
+                          <FormControl className="flex-[6]">
+                            <Input
+                              placeholder="Insira o subtópico do curso"
+                              {...field}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      );
+                    }}
+                  />
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+
+          <div className="flex items-center justify-center mt-4">
+            <Separator className="flex-[1]" />
+            <div className="mx-4">
+              <Button
+                type="button"
+                variant="secondary"
+                className="font-semibold"
+                onClick={() => {
+                  form.setValue("units", [...form.watch("units"), ""]);
+                }}
+              >
+                Adicionar subtópico
+                <Plus className="w-4 h-4 ml-2 text-green-500" />
+              </Button>
+
+              <Button
+                type="button"
+                variant="secondary"
+                className="font-semibold ml-2"
+                onClick={() => {
+                  form.setValue("units", form.watch("units").slice(0, -1));
+                }}
+              >
+                Remover subtópico
+                <Trash className="w-4 h-4 ml-2 text-red-500" />
+              </Button>
+            </div>
+            <Separator className="flex-[1]" />
+          </div>
+          <Button
+            disabled={isPending}
+            type="submit"
+            className="w-full mt-6"
+            size="lg"
+          >
+            {isPending ? "Aguarde..." : "Vamos lá!"}
+
+          </Button>
+        </form>
+      </Form>
+      {!isPro && <SubscriptionAction />}
+    </div>
+  );
+};
+
+export default CreateCourseForm;
