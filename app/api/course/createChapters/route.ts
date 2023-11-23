@@ -11,7 +11,7 @@ import { checkSubscription } from "@/lib/subscription";
 
 export async function POST(req: Request, res: Response) {
   try {
-    const session = await getAuthSession();
+    const session = await getAuthSession({...getAuthSession});
     if (!session?.user) {
       return new NextResponse("Sem autorização", { status: 401 });
     }
