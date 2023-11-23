@@ -13,6 +13,9 @@ type Props = {
   };
 };
 
+export const maxDuration = 300;
+
+
 const CoursePage = async ({ params: { slug } }: Props) => {
   const [courseId, unitIndexParam, chapterIndexParam] = slug;
   const course = await prisma.course.findUnique({

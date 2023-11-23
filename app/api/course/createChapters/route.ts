@@ -9,7 +9,7 @@ import { prisma } from "@/lib/db";
 import { getAuthSession } from "@/lib/auth";
 import { checkSubscription } from "@/lib/subscription";
 
-export const maxDuration = 250;
+export const maxDuration = 300;
 
 export async function POST(req: Request, res: Response) {
   try {

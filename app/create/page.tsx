@@ -7,6 +7,9 @@ import React from "react";
 
 type Props = {};
 
+export const maxDuration = 300;
+
+
 const CreatePage = async (props: Props) => {
   const session = await getAuthSession();
   if (!session?.user) {

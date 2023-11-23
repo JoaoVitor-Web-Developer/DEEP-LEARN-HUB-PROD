@@ -14,6 +14,9 @@ const bodyParser = z.object({
   chapterId: z.string(),
 });
 
+export const maxDuration = 300;
+
+
 export async function POST(req: Request, res: Response) {
   try {
     const body = await req.json();

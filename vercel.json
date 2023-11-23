@@ -1,7 +1,7 @@
 {
     "functions": {
-        "app/api/course/createChapters/route.ts": {
-            "maxDuration": 250
+        "app/api/**/*": {
+            "maxDuration": 300
         }
     }
 }
