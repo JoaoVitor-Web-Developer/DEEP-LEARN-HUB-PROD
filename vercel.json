@@ -1,9 +1,7 @@
 {
-    "generalTimeout": 60,
     "functions": {
-      "app/api/course/createChapters": {
-        "maxDuration": "$generalTimeout"
-      }
+        "app/api/course/createChapters": {
+            "maxDuration": 30
+        }
     }
-  }
-  
+}
