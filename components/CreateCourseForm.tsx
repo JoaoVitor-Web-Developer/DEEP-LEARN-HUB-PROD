@@ -15,6 +15,9 @@ import axios from "axios";
 import { useToast } from "./ui/use-toast";
 import { useRouter } from "next/navigation";
 import SubscriptionAction from "./SubscriptionAction";
+import axiosRetry from "axios-retry";
+
+axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 type Props = { isPro: boolean };
 
@@ -28,6 +31,8 @@ const CreateCourseForm = ({ isPro }: Props) => {
       const response = await axios.post("/api/course/createChapters", {
         title,
         units,
+      }, {
+        timeout: 20000,
       });
       return response.data;
     },
